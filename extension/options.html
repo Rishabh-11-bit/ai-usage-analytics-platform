@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>TokenTracker Prompt Coach — options</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 540px; margin: 40px auto;
+         background: #1a1a19; color: #e8e8e4; padding: 0 20px 40px; }
+  h1 { font-size: 16px; }
+  h2 { font-size: 13px; color: #8ab4f8; margin: 24px 0 8px; }
+  label.row { display: flex; gap: 10px; align-items: center; margin: 12px 0; font-size: 13.5px; }
+  label.field { display: block; margin: 12px 0; font-size: 12.5px; color: #b5b4ac; }
+  input[type=text], input[type=url], input[type=number] {
+    width: 100%; margin-top: 4px; background: #0f0f0e; color: #e8e8e4;
+    border: 1px solid rgba(255,255,255,.2); border-radius: 7px; padding: 7px 9px;
+    font: inherit; font-size: 13px; }
+  .stat { display: flex; justify-content: space-between; padding: 8px 0;
+          border-top: 1px solid rgba(255,255,255,.12); font-size: 13px; }
+  button { background: none; border: 1px solid rgba(255,255,255,.25); color: #e8e8e4;
+           border-radius: 7px; font: inherit; padding: 6px 14px; cursor: pointer; margin-top: 14px; }
+  p { color: #b5b4ac; font-size: 12.5px; line-height: 1.5; }
+  .note { color: #8a8983; font-size: 11.5px; margin-top: 4px; }
+  .saved { color: #3ecf6e; font-size: 12px; margin-left: 10px; }
+</style>
+</head>
+<body>
+<h1>TokenTracker Prompt Coach &amp; Usage</h1>
+<p>Coaches prompts and tracks month-to-date AI usage on ChatGPT, Claude, Gemini,
+Copilot and Poe. Prompt analysis runs entirely in your browser. Usage is counted
+locally; counters (never prompt or response content) are reported to a workspace
+only if you fill in the workspace fields below.</p>
+
+<h2>Coaching</h2>
+<label class="row"><input type="checkbox" id="enabled"> Enable prompt coaching</label>
+
+<h2>Usage bar</h2>
+<label class="row"><input type="checkbox" id="showBar"> Show the month-to-date usage bar</label>
+<label class="field">Monthly token budget (used to scale the bar)
+  <input type="number" id="budget" min="1000" step="1000">
+  <div class="note">e.g. a ChatGPT Plus membership ≈ 1,000,000 tokens/mo of typical use. This is an estimate for the bar, not a hard cap.</div>
+</label>
+
+<h2>Workspace reporting (optional)</h2>
+<p>Fill these to report usage counters to your company's TokenTracker dashboard.
+Leave blank to keep everything on this device.</p>
+<label class="field">TokenTracker URL
+  <input type="url" id="tenantUrl" placeholder="https://tokentracker.yourcompany.com">
+</label>
+<label class="field">Employee reporting token
+  <input type="text" id="employeeToken" placeholder="issued by your admin">
+  <div class="note">Only usage counters (tokens, model, site, timestamp) are sent — never prompt or response text.</div>
+</label>
+<button id="save">Save</button><span class="saved" id="savedMsg"></span>
+
+<h2>Your stats</h2>
+<div class="stat"><span>Quick fixes applied</span><b id="fixes">0</b></div>
+<div class="stat"><span>Tokens saved by coaching</span><b id="tokens">0</b></div>
+<div class="stat"><span>This month — tokens used (est.)</span><b id="mtd">0</b></div>
+<div class="stat"><span>This month — messages</span><b id="msgs">0</b></div>
+<button id="reset">Reset coaching stats</button>
+
+<script src="options.js"></script>
+</body>
+</html>

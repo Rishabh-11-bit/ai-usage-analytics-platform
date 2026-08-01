@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TokenTracker — AI Usage Analytics</title>
+<style>
+  :root {
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --s1: #2a78d6;   /* Anthropic — blue  */
+    --s2: #1baf7a;   /* OpenAI   — aqua  */
+    --s-other: #b3b1a9;
+    --good: #006300;
+    --warn: #a86500;
+    --crit: #d03b3b;
+    --track: #b7d3f6;
+    --fill: #2a78d6;
+    --shadow: 0 1px 2px rgba(11,11,11,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --s1: #3987e5;
+      --s2: #199e70;
+      --s-other: #5c5b55;
+      --good: #0ca30c;
+      --warn: #fab219;
+      --crit: #e66767;
+      --track: #104281;
+      --fill: #3987e5;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 28px clamp(16px, 4vw, 40px) 48px;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+
+  header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  h1 { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+  .sub { color: var(--ink2); font-size: 13.5px; margin-top: 3px; }
+  .who { text-align: right; font-size: 12.5px; color: var(--ink2); }
+  .who b { color: var(--ink); }
+  .who a, .who button.link {
+    color: var(--s1); background: none; border: none; font: inherit;
+    cursor: pointer; text-decoration: none; padding: 0;
+  }
+
+  /* ---- stat tiles ---- */
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    box-shadow: var(--shadow);
+  }
+  .tile .label { color: var(--ink2); font-size: 12px; }
+  .tile .value { font-size: 26px; font-weight: 600; margin-top: 4px; letter-spacing: -0.01em; }
+  .tile .note { font-size: 12px; margin-top: 3px; color: var(--muted); }
+  .tile .note.good { color: var(--good); font-weight: 550; }
+
+  /* ---- panels ---- */
+  .row { display: grid; gap: 12px; margin-bottom: 16px; }
+  .row.two { grid-template-columns: 3fr 2fr; }
+  @media (max-width: 940px) { .row.two { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px 14px;
+    box-shadow: var(--shadow);
+    min-width: 0;
+  }
+  .panel-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .panel h2 { font-size: 13.5px; font-weight: 600; color: var(--ink); }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--ink2); }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+  svg text { font-family: inherit; }
+  .axis-tick { fill: var(--muted); font-size: 11px; }
+  .bar-label { fill: var(--ink2); font-size: 11.5px; }
+  .bar-value { fill: var(--ink); font-size: 11.5px; font-weight: 550; font-variant-numeric: tabular-nums; }
+
+  /* ---- tooltip ---- */
+  #tip {
+    position: fixed; pointer-events: none; z-index: 10; display: none;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; padding: 9px 11px; font-size: 12px;
+    box-shadow: 0 4px 16px rgba(11,11,11,0.18); min-width: 150px;
+  }
+  #tip .t-day { color: var(--ink2); margin-bottom: 5px; font-weight: 550; }
+  #tip .t-row { display: flex; justify-content: space-between; gap: 16px; padding: 1.5px 0; }
+  #tip .t-row .k { display: inline-flex; align-items: center; gap: 6px; color: var(--ink2); }
+  #tip .t-row .v { font-variant-numeric: tabular-nums; font-weight: 550; }
+  #tip .t-total { border-top: 1px solid var(--grid); margin-top: 5px; padding-top: 5px; }
+
+  /* ---- table ---- */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left; color: var(--muted); font-weight: 500; font-size: 11.5px;
+    padding: 4px 8px 8px; border-bottom: 1px solid var(--grid);
+  }
+  th.num { text-align: right; }
+  td { padding: 7px 8px; border-bottom: 1px solid var(--grid); }
+  tr:last-child td { border-bottom: none; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td .team { color: var(--ink2); font-size: 12px; }
+  .meter { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; min-width: 70px; }
+  .meter > div { height: 100%; background: var(--fill); border-radius: 3px; }
+  .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+  .pill.idle { color: var(--crit); border: 1px solid var(--crit); }
+  .pill.active { color: var(--good); border: 1px solid var(--good); }
+
+  /* ---- suggestions / alerts ---- */
+  .sugg {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 11px 13px; margin-bottom: 10px; font-size: 12.5px;
+  }
+  .sugg:last-child { margin-bottom: 0; }
+  .sugg .head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .sugg .type {
+    color: var(--ink2); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .sugg .save { color: var(--good); font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .sugg .detail { color: var(--ink2); line-height: 1.45; }
+  .sugg .detail b { color: var(--ink); font-weight: 550; }
+  .sugg.alert .save { color: var(--crit); }
+  .sugg.alert .type { color: var(--crit); }
+  .empty { color: var(--muted); font-size: 13px; }
+
+  /* ---- form controls (tools) ---- */
+  textarea, input[type=number], input[type=text], input[type=email], input[type=password], select {
+    background: var(--page); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 7px;
+    font: inherit; font-size: 12.5px; padding: 7px 9px;
+    width: 100%;
+  }
+  textarea { resize: vertical; min-height: 96px; line-height: 1.45; }
+  textarea:focus, input:focus, select:focus { outline: 2px solid var(--s1); outline-offset: -1px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; align-items: end; }
+  .field { flex: 1; min-width: 90px; }
+  .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  button.go {
+    background: var(--fill); color: #fff; border: none; border-radius: 7px;
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 8px 16px;
+    cursor: pointer; white-space: nowrap;
+  }
+  button.go:hover { filter: brightness(1.08); }
+  button.go:disabled { opacity: 0.5; cursor: default; }
+  button.ghost {
+    background: none; color: var(--s1); border: 1px solid var(--border);
+    border-radius: 7px; font: inherit; font-size: 12px; font-weight: 550;
+    padding: 5px 12px; cursor: pointer;
+  }
+
+  .result { margin-top: 14px; }
+  .result .headline {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid var(--grid);
+  }
+  .result .big { font-size: 22px; font-weight: 600; }
+  .result .big.good { color: var(--good); }
+  .result .sub2 { font-size: 12px; color: var(--ink2); }
+  .cmp-row { margin-bottom: 10px; }
+  .cmp-row .cmp-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink2); margin-bottom: 3px; }
+  .cmp-row .cmp-label .v { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cmp-row .cmp-track { height: 14px; border-radius: 4px; background: transparent; }
+  .cmp-row .cmp-track > div { height: 100%; border-radius: 4px; background: var(--fill); min-width: 3px; }
+  .rec { font-size: 12.5px; color: var(--ink2); line-height: 1.5; margin-top: 10px; }
+  .rec b { color: var(--good); }
+  .fineprint { font-size: 11px; color: var(--muted); margin-top: 8px; line-height: 1.45; }
+
+  /* ---- login overlay ---- */
+  #gate {
+    position: fixed; inset: 0; z-index: 100; background: var(--page);
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .gate-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 8px 40px rgba(11,11,11,0.12); padding: 28px; width: 100%; max-width: 380px;
+  }
+  .gate-card h1 { margin-bottom: 2px; }
+  .gate-card .sub { margin-bottom: 18px; }
+  .gate-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--grid); }
+  .gate-tabs button {
+    background: none; border: none; font: inherit; font-size: 13px; font-weight: 550;
+    color: var(--muted); padding: 8px 12px; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .gate-tabs button.on { color: var(--ink); border-bottom-color: var(--s1); }
+  .gate-card .field { margin-bottom: 10px; }
+  .gate-err { color: var(--crit); font-size: 12px; margin: 6px 0; min-height: 15px; }
+  .demo-hint {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--grid);
+    font-size: 11.5px; color: var(--muted); line-height: 1.5;
+  }
+  .demo-hint code { background: var(--page); border-radius: 4px; padding: 1px 5px; }
+  #app { display: none; }
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gate-card">
+    <h1>TokenTracker</h1>
+    <div class="sub">Per-employee AI usage, cost &amp; chargeback</div>
+    <div class="gate-tabs">
+      <button id="tab-login" class="on">Log in</button>
+      <button id="tab-signup">Create organization</button>
+    </div>
+    <div id="form-login">
+      <div class="field"><label>Email</label><input type="email" id="li-email" autocomplete="username"></div>
+      <div class="field"><label>Password</label><input type="password" id="li-pass" autocomplete="current-password"></div>
+    </div>
+    <div id="form-signup" style="display:none">
+      <div class="field"><label>Organization name</label><input type="text" id="su-org"></div>
+      <div class="field"><label>Your name</label><input type="text" id="su-name"></div>
+      <div class="field"><label>Work email</label><input type="email" id="su-email" autocomplete="username"></div>
+      <div class="field"><label>Password (8+ chars)</label><input type="password" id="su-pass" autocomplete="new-password"></div>
+    </div>
+    <div class="gate-err" id="gate-err"></div>
+    <button class="go" id="gate-go" style="width:100%">Log in</button>
+    <div class="demo-hint">
+      Demo tenant: <code>admin@demo.co</code> / <code>demo1234</code> (admin) ·
+      <code>neha@demo.co</code> / <code>demo1234</code> (employee view) ·
+      <a href="/security" target="_blank" style="color:var(--s1)">security&nbsp;posture</a>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+<header>
+  <div>
+    <h1>TokenTracker</h1>
+    <div class="sub" id="subline">Per-employee AI usage &amp; cost analytics — last 30 days</div>
+  </div>
+  <div class="who">
+    <div><b id="who-org"></b></div>
+    <div><span id="who-user"></span> · <span id="who-role"></span> ·
+      <button class="link" id="logout">log out</button></div>
+    <div><a href="/security" target="_blank">security posture</a></div>
+  </div>
+</header>
+
+<div id="alertstrip"></div>
+
+<div class="tiles" id="tiles"></div>
+
+<div class="row two">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Daily cost by provider</h2>
+      <div class="legend" id="legend-daily"></div>
+    </div>
+    <div id="dailyChart"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Cost by model</h2>
+      <div class="legend" id="legend-model"></div>
+    </div>
+    <div id="modelChart"></div>
+  </div>
+</div>
+
+<div class="row two" id="row-cb" style="display:none">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Client chargeback — AI spend by project</h2>
+      <button class="ghost" id="cb-export">Export CSV</button>
+    </div>
+    <table id="cbTable">
+      <thead><tr>
+        <th>Project</th><th>Client</th><th class="num">People</th><th class="num">Tokens</th><th class="num">Cost</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="fineprint">Add these as billable line items on client invoices — AI spend stops being unattributed overhead.</div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Seat utilization — flat-rate tools</h2></div>
+    <table id="seatTable">
+      <thead><tr>
+        <th>Tool</th><th>Employee</th><th class="num">$/mo</th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="row two" id="row-rs" style="display:none">
+  <div class="panel" style="grid-column:1 / -1">
+    <div class="panel-head">
+      <h2>Membership rightsizing — memberships vs. measured usage</h2>
+      <span class="legend" style="font-size:11px; color:var(--muted)">estimated · web usage from extension</span>
+    </div>
+    <table id="rsTable">
+      <thead><tr>
+        <th>Employee</th><th>Membership</th><th class="num">Flat $/mo</th>
+        <th class="num">Est. metered</th><th>Verdict</th><th class="num">Save/mo</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="fineprint" id="rs-foot"></div>
+  </div>
+</div>
+
+<div class="row two" id="row-gw" style="display:none">
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Gateway — virtual keys &amp; budgets</h2>
+      <span class="legend" style="font-size:11px; color:var(--muted)">POST /gw/v1/chat/completions</span>
+    </div>
+    <table id="keyTable">
+      <thead><tr>
+        <th>Key</th><th>Employee</th><th class="num">Budget/mo</th><th class="num">Spent</th><th></th><th></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <div class="controls">
+      <div class="field" style="flex:2"><label>Employee</label><select id="key-emp"></select></div>
+      <div class="field" style="max-width:120px"><label>Budget $/mo</label><input type="number" id="key-budget" value="100" min="1"></div>
+      <button class="go" id="key-create">Create key</button>
+    </div>
+    <div id="key-new" class="fineprint"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Prompt traffic coach</h2>
+      <label style="font-size:11.5px; color:var(--ink2); display:flex; gap:6px; align-items:center">
+        <input type="checkbox" id="store-prompts" style="width:auto"> store prompts (redacted)
+      </label>
+    </div>
+    <button class="ghost" id="coach-run">Analyze last 7 days of real traffic</button>
+    <div class="result" id="coach-result"></div>
+    <div class="fineprint">Prompts are redacted (emails, keys, tokens, long numbers) before storage and analyzed in place — see <a href="/security" target="_blank" style="color:var(--s1)">security posture</a>.</div>
+  </div>
+</div>
+
+<div class="row two" id="row-ops" style="display:none">
+  <div class="panel">
+    <div class="panel-head"><h2>Connectors &amp; directory</h2></div>
+    <div id="connectors"></div>
+    <div class="controls">
+      <button class="ghost" id="scim-gen">Generate SCIM token (Okta / Entra)</button>
+    </div>
+    <div id="scim-out" class="fineprint"></div>
+    <div class="controls">
+      <div class="field" style="flex:3"><label>CSV import — name,email,team (one per line)</label>
+        <textarea id="csv-box" style="min-height:56px" placeholder="Asha Rao,asha@demo.co,Engineering"></textarea></div>
+      <button class="go" id="csv-go">Import</button>
+    </div>
+    <div id="unmapped-wrap" style="margin-top:12px"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h2>Billing &amp; plan</h2></div>
+    <div id="billing-box"></div>
+  </div>
+</div>
+
+<div class="row two">
+  <div class="panel">
+    <div class="panel-head"><h2>Top employees by cost</h2></div>
+    <table id="empTable">
+      <thead><tr>
+        <th>Employee</th><th class="num">Tokens</th><th class="num">Cost</th><th style="width:110px"></th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="panel" id="panel-suggs">
+    <div class="panel-head">
+      <h2>Optimization suggestions</h2>
+      <button class="ghost" id="digest-btn" style="display:none">Preview daily digest</button>
+    </div>
+    <div id="suggs"></div>
+    <pre id="digest-out" style="display:none; margin-top:12px; font-size:12px; color:var(--ink2); white-space:pre-wrap; border-top:1px solid var(--grid); padding-top:10px;"></pre>
+  </div>
+</div>
+
+<div class="row two">
+  <div class="panel">
+    <div class="panel-head"><h2>Prompt coach — token reduction</h2></div>
+    <textarea id="pc-prompt" placeholder="Paste a prompt your team runs often. The coach flags filler, duplication, missing output constraints — and estimates the monthly cost of the bloat."></textarea>
+    <div class="controls">
+      <div class="field"><label>Model</label><select id="pc-model"></select></div>
+      <div class="field" style="max-width:110px"><label>Runs / day</label><input type="number" id="pc-runs" value="50" min="1"></div>
+      <button class="go" id="pc-go">Analyze</button>
+    </div>
+    <div class="result" id="pc-result"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Project cost estimator — AI vs. developers</h2></div>
+    <div class="controls" style="margin-top:0">
+      <div class="field" style="flex:2"><label>Project type</label><select id="pe-preset"></select></div>
+      <div class="field" style="max-width:150px"><label>Size</label>
+        <select id="pe-size">
+          <option value="S">Small</option>
+          <option value="M" selected>Medium</option>
+          <option value="L">Large</option>
+        </select>
+      </div>
+    </div>
+    <div class="controls">
+      <div class="field"><label>Simple tasks</label><input type="number" id="pe-simple" value="10" min="0"></div>
+      <div class="field"><label>Medium tasks</label><input type="number" id="pe-medium" value="6" min="0"></div>
+      <div class="field"><label>Complex tasks</label><input type="number" id="pe-complex" value="2" min="0"></div>
+    </div>
+    <div class="controls">
+      <div class="field"><label>Model</label><select id="pe-model"></select></div>
+      <div class="field" style="max-width:130px"><label>Dev rate ($/hr)</label><input type="number" id="pe-rate" value="40" min="1"></div>
+      <button class="go" id="pe-go">Estimate</button>
+    </div>
+    <div class="result" id="pe-result"></div>
+  </div>
+</div>
+</div><!-- /app -->
+
+<div id="tip"></div>
+
+<script>
+const fmt = n => n >= 1e9 ? (n/1e9).toFixed(1)+'B' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : String(n);
+const usd = n => '$' + Number(n).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const usd0 = n => '$' + Math.round(Number(n)).toLocaleString();
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+/* ---- auth ---- */
+const tok = () => localStorage.getItem('tt_token');
+const hdrs = () => tok() ? { 'Authorization': 'Bearer ' + tok() } : {};
+class HttpError extends Error { constructor(status, msg){ super(msg); this.status = status; } }
+
+async function j(u) {
+  const r = await fetch(u, { headers: hdrs() });
+  if (r.status === 401) { showGate(); throw new HttpError(401, 'unauthenticated'); }
+  if (!r.ok) throw new HttpError(r.status, (await r.text()).slice(0, 200));
+  return r.json();
+}
+async function post(u, body) {
+  const r = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json', ...hdrs() }, body: JSON.stringify(body) });
+  if (r.status === 401 && !u.startsWith('/api/auth/')) { showGate(); throw new HttpError(401, 'unauthenticated'); }
+  if (!r.ok) {
+    let msg = await r.text();
+    try { msg = JSON.parse(msg).detail || msg; } catch {}
+    throw new HttpError(r.status, String(msg).slice(0, 200));
+  }
+  return r.json();
+}
+/* fetch admin-only data; null means "not allowed — hide the panel" */
+async function tryJ(u) {
+  try { return await j(u); }
+  catch (e) { if (e.status === 403) return null; throw e; }
+}
+
+const gate = document.getElementById('gate');
+const appEl = document.getElementById('app');
+function showGate() { gate.style.display = 'flex'; appEl.style.display = 'none'; }
+function showApp() { gate.style.display = 'none'; appEl.style.display = 'block'; }
+
+let mode = 'login';
+function setMode(m) {
+  mode = m;
+  document.getElementById('tab-login').classList.toggle('on', m === 'login');
+  document.getElementById('tab-signup').classList.toggle('on', m === 'signup');
+  document.getElementById('form-login').style.display = m === 'login' ? '' : 'none';
+  document.getElementById('form-signup').style.display = m === 'signup' ? '' : 'none';
+  document.getElementById('gate-go').textContent = m === 'login' ? 'Log in' : 'Create organization';
+  document.getElementById('gate-err').textContent = '';
+}
+document.getElementById('tab-login').onclick = () => setMode('login');
+document.getElementById('tab-signup').onclick = () => setMode('signup');
+
+document.getElementById('gate-go').onclick = async () => {
+  const err = document.getElementById('gate-err');
+  err.textContent = '';
+  try {
+    const res = mode === 'login'
+      ? await post('/api/auth/login', {
+          email: document.getElementById('li-email').value.trim(),
+          password: document.getElementById('li-pass').value })
+      : await post('/api/auth/signup', {
+          org_name: document.getElementById('su-org').value.trim(),
+          name: document.getElementById('su-name').value.trim(),
+          email: document.getElementById('su-email').value.trim(),
+          password: document.getElementById('su-pass').value });
+    localStorage.setItem('tt_token', res.token);
+    showApp();
+    loadAll(res.user);
+  } catch (e) { err.textContent = e.message; }
+};
+['li-pass', 'li-email'].forEach(id => document.getElementById(id)
+  .addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('gate-go').click(); }));
+
+document.getElementById('logout').onclick = async () => {
+  try { await post('/api/auth/logout', {}); } catch {}
+  localStorage.removeItem('tt_token');
+  location.reload();
+};
+
+/* ---- tooltip ---- */
+const tip = document.getElementById('tip');
+function showTip(html, ev) {
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  const w = tip.offsetWidth, h = tip.offsetHeight;
+  let x = ev.clientX + 14, y = ev.clientY - h - 10;
+  if (x + w > innerWidth - 8) x = ev.clientX - w - 14;
+  if (y < 8) y = ev.clientY + 14;
+  tip.style.left = x + 'px'; tip.style.top = y + 'px';
+}
+const hideTip = () => tip.style.display = 'none';
+
+const PROVIDER_META = {
+  anthropic: { label: 'Anthropic', slot: '--s1' },
+  openai:    { label: 'OpenAI',    slot: '--s2' },
+};
+const provColor = p => css((PROVIDER_META[p] || { slot: '--s-other' }).slot);
+const provLabel = p => (PROVIDER_META[p] || { label: p }).label;
+
+function topRoundRect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h);
+  if (r <= 0) return `M${x},${y} h${w} v${h} h${-w} Z`;
+  return `M${x},${y + r} a${r},${r} 0 0 1 ${r},${-r} h${w - 2*r} a${r},${r} 0 0 1 ${r},${r} v${h - r} h${-w} Z`;
+}
+function niceTicks(max, count = 4) {
+  const raw = max / count, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s * count >= max) || 10 * mag;
+  const ticks = [];
+  for (let v = 0; v <= max + 1e-9; v += step) ticks.push(v);
+  return ticks;
+}
+
+function renderDaily(daily, mount) {
+  if (!daily.length) { mount.innerHTML = '<div class="empty">No usage yet — connect a provider or run the demo seeder.</div>'; return []; }
+  const days = [...new Set(daily.map(d => d.day))].sort();
+  const provs = [...new Set(daily.map(d => d.provider))].sort();
+  const byDay = {};
+  for (const d of days) byDay[d] = {};
+  for (const r of daily) byDay[r.day][r.provider] = r.cost_usd;
+  const totals = days.map(d => provs.reduce((a, p) => a + (byDay[d][p] || 0), 0));
+  const maxV = Math.max(...totals, 1);
+  const ticks = niceTicks(maxV);
+  const yMax = ticks[ticks.length - 1];
+
+  const W = Math.max(mount.clientWidth, 320), H = 240;
+  const M = { t: 8, r: 8, b: 24, l: 40 };
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const slot = iw / days.length;
+  const bw = Math.min(24, Math.max(3, slot - 2));
+  const y = v => M.t + ih - (v / yMax) * ih;
+
+  let g = '';
+  for (const t of ticks) {
+    g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)" stroke-width="1"/>`
+       + `<text class="axis-tick" x="${M.l - 6}" y="${y(t) + 3.5}" text-anchor="end">${usd0(t)}</text>`;
+  }
+  const every = Math.ceil(days.length / 6);
+  days.forEach((d, i) => {
+    if (i % every) return;
+    const cx = M.l + i * slot + slot / 2;
+    g += `<text class="axis-tick" x="${cx}" y="${H - 7}" text-anchor="middle">${d.slice(5)}</text>`;
+  });
+
+  let bars = '', hits = '';
+  days.forEach((d, i) => {
+    const x = M.l + i * slot + (slot - bw) / 2;
+    let acc = 0;
+    const parts = provs.map(p => ({ p, v: byDay[d][p] || 0 })).filter(s => s.v > 0);
+    parts.forEach((s, si) => {
+      const y1 = y(acc + s.v), y0 = y(acc);
+      const isTop = si === parts.length - 1;
+      const yy = y1 + (isTop ? 0 : 2);
+      bars += isTop
+        ? `<path d="${topRoundRect(x, yy, bw, Math.max(y0 - yy, 0.5), 4)}" fill="${provColor(s.p)}"/>`
+        : `<rect x="${x}" y="${yy}" width="${bw}" height="${Math.max(y0 - yy - 2, 0.5)}" fill="${provColor(s.p)}"/>`;
+      acc += s.v;
+    });
+    const rows = parts.map(s =>
+      `<div class="t-row"><span class="k"><span class="legend swatch" style="width:9px;height:9px;border-radius:2px;background:${provColor(s.p)}"></span>${provLabel(s.p)}</span><span class="v">${usd(s.v)}</span></div>`
+    ).reverse().join('');
+    const html = `<div class="t-day">${d}</div>${rows}<div class="t-row t-total"><span class="k">Total</span><span class="v">${usd(totals[i])}</span></div>`;
+    hits += `<rect x="${M.l + i * slot}" y="${M.t}" width="${slot}" height="${ih}" fill="transparent" data-tip="${esc(html)}"/>`;
+  });
+
+  mount.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">`
+    + g
+    + `<line x1="${M.l}" x2="${W - M.r}" y1="${y(0)}" y2="${y(0)}" stroke="var(--baseline)" stroke-width="1"/>`
+    + bars + hits + `</svg>`;
+
+  mount.querySelectorAll('[data-tip]').forEach(el => {
+    el.addEventListener('mousemove', ev => showTip(el.dataset.tip, ev));
+    el.addEventListener('mouseleave', hideTip);
+  });
+  return provs;
+}
+
+function renderModels(models, mount) {
+  if (!models.length) { mount.innerHTML = '<div class="empty">No usage yet.</div>'; return; }
+  const rows = [...models].sort((a, b) => b.cost_usd - a.cost_usd);
+  const top = rows.slice(0, 7);
+  const rest = rows.slice(7);
+  if (rest.length) top.push({
+    model: `Other (${rest.length})`, provider: '_other',
+    cost_usd: rest.reduce((a, m) => a + m.cost_usd, 0),
+  });
+  const maxV = Math.max(...top.map(m => m.cost_usd), 1);
+
+  const W = Math.max(mount.clientWidth, 280), rowH = 30, bh = 14;
+  const H = top.length * rowH + 8;
+  const L = 8, valW = 56, R = 8;
+  const labelH = 15;
+
+  let out = '';
+  top.forEach((m, i) => {
+    const yTop = 4 + i * rowH;
+    const bw = Math.max((m.cost_usd / maxV) * (W - L - valW - R), 2);
+    const yBar = yTop + labelH;
+    out += `<text class="bar-label" x="${L}" y="${yTop + 10}">${esc(m.model)}</text>`
+         + `<rect x="${L}" y="${yBar}" width="${bw}" height="${bh}" rx="4" fill="${provColor(m.provider)}"/>`
+         + `<text class="bar-value" x="${L + bw + 7}" y="${yBar + bh - 3}">${usd0(m.cost_usd)}</text>`;
+  });
+  mount.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}">${out}</svg>`;
+}
+
+function renderLegend(el, provs) {
+  el.innerHTML = provs.map(p =>
+    `<span class="key"><span class="swatch" style="background:${provColor(p)}"></span>${provLabel(p)}</span>`
+  ).join('');
+}
+
+/* ---- main load ---- */
+let toolsBound = false;
+let lastDaily = [], lastModels = [];
+let currentUser = null;
+
+async function loadAll(user) {
+  currentUser = user;
+  document.getElementById('who-org').textContent = user.tenant_name;
+  document.getElementById('who-user').textContent = user.name;
+  document.getElementById('who-role').textContent = user.role;
+  if (user.role !== 'admin')
+    document.getElementById('subline').textContent = 'Your AI usage & cost — last 30 days';
+
+  const [sum, daily, emps, models] = await Promise.all([
+    j('/api/summary'), j('/api/daily'), j('/api/employees'), j('/api/models'),
+  ]);
+  const [suggs, chargeback, seats, alerts, rightsizing] = await Promise.all([
+    tryJ('/api/suggestions'), tryJ('/api/chargeback'), tryJ('/api/seats'),
+    tryJ('/api/alerts'), tryJ('/api/rightsizing'),
+  ]);
+  renderRightsizing(rightsizing);
+  const [keys, billingData, conns, settings, unmappedList, dirEmps] = await Promise.all([
+    tryJ('/api/keys'), tryJ('/api/billing'), tryJ('/api/connectors'),
+    tryJ('/api/settings'), tryJ('/api/directory/unmapped'), tryJ('/api/directory/employees'),
+  ]);
+  lastDaily = daily; lastModels = models;
+  renderAdminOps(keys, billingData, conns, settings, unmappedList, dirEmps);
+
+  /* Alert strip */
+  const strip = document.getElementById('alertstrip');
+  strip.innerHTML = (alerts || []).slice(0, 2).map(a => `
+    <div class="sugg alert" style="margin-bottom:12px">
+      <div class="head"><span class="type">Spend anomaly — ${a.day}</span>
+        <span class="save">${usd(a.cost_usd)} (${a.z_score}σ above normal)</span></div>
+      <div class="detail">Daily average is ${usd(a.daily_mean)}. Top contributor:
+        <b>${esc(a.top_contributor || 'unknown')}</b> at ${usd(a.top_contributor_cost || 0)}.</div>
+    </div>`).join('');
+
+  /* Stat tiles */
+  const totalSavings = suggs ? suggs.reduce((a, s) => a + s.est_monthly_savings_usd, 0) : null;
+  const cacheRate = (sum.cached_tokens / Math.max(sum.input_tokens, 1)) * 100;
+  const tiles = [
+    { l: 'Total spend (30d)', v: usd(sum.cost_usd) },
+    { l: 'Active employees', v: sum.active_employees },
+    { l: 'Input tokens', v: fmt(sum.input_tokens), n: fmt(sum.cached_tokens) + ' cached' },
+    { l: 'Output tokens', v: fmt(sum.output_tokens) },
+    { l: 'Cache hit rate', v: cacheRate.toFixed(0) + '%' },
+  ];
+  if (totalSavings !== null) tiles.push({
+    l: 'Identified savings', v: usd0(totalSavings) + '/mo',
+    n: suggs.length + ' suggestion' + (suggs.length === 1 ? '' : 's'), g: totalSavings > 0 });
+  document.getElementById('tiles').innerHTML = tiles.map(t =>
+    `<div class="tile"><div class="label">${t.l}</div><div class="value">${t.v}</div>${t.n ? `<div class="note${t.g ? ' good' : ''}">${t.n}</div>` : ''}</div>`).join('');
+
+  /* Charts */
+  const provs = renderDaily(daily, document.getElementById('dailyChart'));
+  renderLegend(document.getElementById('legend-daily'), provs);
+  renderModels(models, document.getElementById('modelChart'));
+  renderLegend(document.getElementById('legend-model'), [...new Set(models.map(m => m.provider))].sort());
+
+  /* Chargeback + seats (admin only) */
+  document.getElementById('row-cb').style.display = (chargeback || seats) ? '' : 'none';
+  if (chargeback) {
+    document.querySelector('#cbTable tbody').innerHTML = chargeback.map(r => `
+      <tr>
+        <td>${esc(r.project)}</td>
+        <td><span class="team">${esc(r.client)}</span></td>
+        <td class="num">${r.contributors}</td>
+        <td class="num">${fmt(r.tokens)}</td>
+        <td class="num">${usd(r.cost_usd)}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="empty">No project-tagged usage yet.</td></tr>';
+  }
+  if (seats) {
+    const idle = seats.filter(s => s.inactive);
+    const idleCost = idle.reduce((a, s) => a + s.monthly_cost_usd, 0);
+    const rows = [...seats].sort((a, b) => b.inactive - a.inactive).slice(0, 10);
+    document.querySelector('#seatTable tbody').innerHTML = rows.map(s => `
+      <tr>
+        <td>${esc(s.tool)}</td>
+        <td>${esc(s.employee || '—')}${s.team ? ` <span class="team">· ${esc(s.team)}</span>` : ''}</td>
+        <td class="num">${usd(s.monthly_cost_usd)}</td>
+        <td style="text-align:right"><span class="pill ${s.inactive ? 'idle' : 'active'}">${s.inactive ? 'idle 30d+' : 'active'}</span></td>
+      </tr>`).join('');
+    if (idle.length) {
+      document.querySelector('#seatTable tbody').innerHTML += `
+        <tr><td colspan="4" style="color:var(--crit); font-weight:550">
+          ${idle.length} idle seats — ${usd0(idleCost)}/mo recoverable</td></tr>`;
+    }
+  }
+
+  /* Suggestions (admin only) */
+  const suggEl = document.getElementById('suggs');
+  if (suggs === null) {
+    document.getElementById('panel-suggs').style.display = 'none';
+  } else {
+    suggEl.innerHTML = suggs.length ? suggs.map(s => `
+      <div class="sugg">
+        <div class="head">
+          <span class="type">${esc(s.type.replace(/_/g, ' '))}</span>
+          <span class="save">Save ~${usd0(s.est_monthly_savings_usd)}/mo</span>
+        </div>
+        <div class="detail"><b>${esc(s.target)}</b> — ${esc(s.detail)}</div>
+      </div>`).join('')
+      : '<div class="empty">No suggestions — usage looks efficient.</div>';
+    document.getElementById('digest-btn').style.display = '';
+  }
+
+  /* Employee table */
+  const maxCost = Math.max(...emps.map(e => e.cost_usd), 1);
+  document.querySelector('#empTable tbody').innerHTML = emps.slice(0, 12).map(e => `
+    <tr>
+      <td>${esc(e.name)}${e.team ? ` <span class="team">· ${esc(e.team)}</span>` : ''}</td>
+      <td class="num">${fmt(e.input_tokens + e.output_tokens)}</td>
+      <td class="num">${usd(e.cost_usd)}</td>
+      <td><div class="meter"><div style="width:${(e.cost_usd / maxCost * 100).toFixed(0)}%"></div></div></td>
+    </tr>`).join('') || '<tr><td colspan="4" class="empty">No mapped usage yet.</td></tr>';
+
+  if (!toolsBound) { toolsBound = true; await bindTools(); }
+}
+
+/* ---- admin ops panels: gateway, connectors, directory, billing ---- */
+function renderRightsizing(rows) {
+  const wrap = document.getElementById('row-rs');
+  if (!rows || !rows.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const VERDICT = {
+    cancel: { label: 'cancel', cls: 'idle' },
+    move_to_metered: { label: 'move to metered', cls: 'idle' },
+    keep: { label: 'keep', cls: 'active' },
+  };
+  const totalSave = rows.reduce((a, r) => a + r.est_monthly_savings_usd, 0);
+  document.querySelector('#rsTable tbody').innerHTML = rows.map(r => {
+    const v = VERDICT[r.verdict] || VERDICT.keep;
+    return `<tr>
+      <td>${esc(r.employee || '—')}${r.team ? ` <span class="team">· ${esc(r.team)}</span>` : ''}</td>
+      <td>${esc(r.tool)}</td>
+      <td class="num">${usd(r.monthly_cost_usd)}</td>
+      <td class="num">${r.tokens ? usd(r.estimated_metered_usd) : '<span style="color:var(--muted)">no usage</span>'}</td>
+      <td><span class="pill ${v.cls}">${v.label}</span></td>
+      <td class="num" style="${r.est_monthly_savings_usd > 0 ? 'color:var(--good);font-weight:600' : 'color:var(--muted)'}">${r.est_monthly_savings_usd > 0 ? usd(r.est_monthly_savings_usd) : '—'}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('rs-foot').innerHTML =
+    `Estimated recoverable: <b style="color:var(--good)">${usd0(totalSave)}/mo</b> across ${rows.length} memberships. ` +
+    `Cancel = no measured web usage; move to metered = estimated API cost well below the flat fee. ` +
+    `Figures are extension estimates — confirm before acting.`;
+}
+
+function renderAdminOps(keys, billingData, conns, settings, unmappedList, dirEmps) {
+  document.getElementById('row-gw').style.display = keys ? '' : 'none';
+  document.getElementById('row-ops').style.display = (conns || billingData) ? '' : 'none';
+  if (!keys && !conns && !billingData) return;
+
+  if (keys) {
+    document.querySelector('#keyTable tbody').innerHTML = keys.map(k => `
+      <tr>
+        <td style="font-variant-numeric:tabular-nums">${esc(k.key_prefix)}</td>
+        <td>${esc(k.employee || '—')}${k.team ? ` <span class="team">· ${esc(k.team)}</span>` : ''}</td>
+        <td class="num">${usd(k.monthly_budget_usd)}</td>
+        <td class="num" style="${k.over_budget ? 'color:var(--crit); font-weight:600' : ''}">${usd(k.spent_this_month)}${k.over_budget ? ' ⛔' : ''}</td>
+        <td><button class="ghost" data-kb="${k.id}">budget</button></td>
+        <td><button class="ghost" data-kt="${k.id}" data-on="${k.active}">${k.active ? 'revoke' : 'enable'}</button></td>
+      </tr>`).join('') || '<tr><td colspan="6" class="empty">No virtual keys yet — create one below.</td></tr>';
+    document.querySelectorAll('[data-kb]').forEach(b => b.onclick = async () => {
+      const v = prompt('New monthly budget (USD):');
+      if (!v) return;
+      await post('/api/keys/' + b.dataset.kb, { monthly_budget_usd: +v });
+      loadAll(currentUser);
+    });
+    document.querySelectorAll('[data-kt]').forEach(b => b.onclick = async () => {
+      await post('/api/keys/' + b.dataset.kt, { active: b.dataset.on !== '1' });
+      loadAll(currentUser);
+    });
+  }
+  if (dirEmps) {
+    document.getElementById('key-emp').innerHTML = dirEmps
+      .filter(e => e.active)
+      .map(e => `<option value="${e.id}">${esc(e.name)}${e.team ? ' · ' + esc(e.team) : ''}</option>`).join('');
+  }
+  if (settings) document.getElementById('store-prompts').checked = settings.store_prompts === '1';
+
+  if (conns) {
+    document.getElementById('connectors').innerHTML = conns.map(c => `
+      <div class="sugg" style="display:flex; justify-content:space-between; align-items:center; gap:10px">
+        <div>
+          <div style="font-weight:550">${esc(c.label)}
+            <span class="pill ${c.configured ? 'active' : 'idle'}" style="margin-left:6px">${c.configured ? 'configured' : 'demo mode'}</span></div>
+          <div class="team" style="margin-top:2px">env: ${esc(c.env)}${c.last_sync ? ' · synced ' + esc(c.last_sync.slice(0, 16).replace('T', ' ')) : ''}</div>
+        </div>
+        ${c.syncable ? `<button class="ghost" data-sync="${c.name}">Sync now</button>` : ''}
+      </div>`).join('');
+    document.querySelectorAll('[data-sync]').forEach(b => b.onclick = async () => {
+      b.disabled = true; b.textContent = 'syncing…';
+      try { const r = await post('/api/connectors/' + b.dataset.sync + '/sync', {});
+            b.textContent = `${r.mode}: ${r.seats} seats`; }
+      catch (e) { b.textContent = 'failed'; }
+      setTimeout(() => loadAll(currentUser), 900);
+    });
+  }
+
+  if (unmappedList) {
+    const wrap = document.getElementById('unmapped-wrap');
+    if (!unmappedList.length) { wrap.innerHTML = '<div class="fineprint">No unmapped provider IDs — every key and seat is attributed to a person.</div>'; }
+    else {
+      wrap.innerHTML = `<div style="font-size:12px; font-weight:600; margin-bottom:6px">Unmapped IDs (${unmappedList.length})</div>` +
+        unmappedList.map(u => `
+          <div class="controls" style="margin-top:4px">
+            <div class="field" style="flex:2"><span style="font-size:12px">${esc(u.external_id)}</span></div>
+            <div class="field" style="flex:2"><select data-map="${u.id}">
+              ${(dirEmps || []).filter(e => e.email).map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}
+            </select></div>
+            <button class="ghost" data-mapgo="${u.id}">Map</button>
+          </div>`).join('');
+      document.querySelectorAll('[data-mapgo]').forEach(b => b.onclick = async () => {
+        const sel = document.querySelector(`[data-map="${b.dataset.mapgo}"]`);
+        await post('/api/directory/map', { unmapped_id: +b.dataset.mapgo, target_employee_id: +sel.value });
+        loadAll(currentUser);
+      });
+    }
+  }
+
+  if (billingData) {
+    const b = billingData;
+    const planLabel = b.plan === 'pro' ? 'Pro' : b.plan === 'trial' ? `Trial — ${b.trial_days_left} days left` : 'Trial expired';
+    document.getElementById('billing-box').innerHTML = `
+      <div class="headline" style="border-bottom:1px solid var(--grid); padding-bottom:10px; margin-bottom:10px">
+        <span class="big">${planLabel}</span>
+        <span class="sub2">${b.active_employees} tracked employees</span>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-label"><span>Monthly price ($${b.per_employee_usd}/employee, $${b.minimum_usd} min)</span><span class="v">${usd(b.monthly_price_usd)}</span></div>
+        <div class="cmp-track"><div style="width:${Math.min(b.monthly_price_usd / Math.max(b.identified_savings_usd, b.monthly_price_usd) * 100, 100).toFixed(0)}%"></div></div>
+      </div>
+      <div class="cmp-row">
+        <div class="cmp-label"><span>Savings identified this month</span><span class="v" style="color:var(--good)">${usd(b.identified_savings_usd)}</span></div>
+        <div class="cmp-track"><div style="width:100%; background:var(--good)"></div></div>
+      </div>
+      <div class="rec">${b.roi >= 1
+        ? `TokenTracker has identified <b>${b.roi}x</b> its own price in monthly savings.`
+        : 'Savings identified so far are below the subscription price — connect more providers.'}</div>
+      <div class="controls">
+        <button class="go" id="billing-upgrade">${b.stripe_configured ? 'Upgrade to Pro' : 'Upgrade (Stripe not configured — demo)'}</button>
+      </div>
+      <div id="billing-msg" class="fineprint"></div>`;
+    document.getElementById('billing-upgrade').onclick = async () => {
+      const msg = document.getElementById('billing-msg');
+      try { const r = await post('/api/billing/checkout', {}); window.open(r.url, '_blank'); }
+      catch (e) { msg.textContent = e.message; }
+    };
+  }
+}
+
+/* ---- tools ---- */
+async function bindTools() {
+  const pricing = await j('/api/pricing');
+  const modelOpts = pricing.map(p =>
+    `<option value="${p.provider}|${p.model}"${p.model === 'claude-sonnet-5' ? ' selected' : ''}>${p.model} ($${p.input}/$${p.output} per 1M)</option>`
+  ).join('');
+  document.getElementById('pc-model').innerHTML = modelOpts;
+  document.getElementById('pe-model').innerHTML = modelOpts;
+
+  function busy(btn, on) { btn.disabled = on; }
+
+  document.getElementById('key-create').addEventListener('click', async () => {
+    const out = document.getElementById('key-new');
+    try {
+      const r = await post('/api/keys', {
+        employee_id: +document.getElementById('key-emp').value,
+        monthly_budget_usd: +document.getElementById('key-budget').value || 100 });
+      out.innerHTML = `New key (copy now — shown once): <b style="color:var(--ink); user-select:all">${esc(r.key)}</b>`;
+      loadAll(currentUser);
+    } catch (e) { out.textContent = e.message; }
+  });
+
+  document.getElementById('store-prompts').addEventListener('change', async ev => {
+    await post('/api/settings', { key: 'store_prompts', value: ev.target.checked ? '1' : '0' });
+  });
+
+  document.getElementById('coach-run').addEventListener('click', async () => {
+    const out = document.getElementById('coach-result');
+    out.innerHTML = '<div class="empty">Analyzing traffic…</div>';
+    try {
+      const r = await j('/api/prompts/coach?days=7');
+      if (!r.prompts_analyzed) { out.innerHTML = '<div class="empty">No stored prompt traffic yet — enable storage and route requests through the gateway.</div>'; return; }
+      out.innerHTML = `
+        <div class="headline">
+          <span class="big good">save ~${usd(r.est_monthly_savings_usd)}/mo</span>
+          <span class="sub2">${r.prompts_with_findings} of ${r.prompts_analyzed} distinct prompts have fixable bloat</span>
+        </div>
+        <div class="sub2" style="margin-bottom:8px">Most common issues: ${Object.entries(r.issue_counts).slice(0, 4).map(([k, v]) => `${k.replace(/_/g, ' ')} (${v})`).join(' · ') || '—'}</div>
+        ${r.worst.map(w => `
+          <div class="sugg">
+            <div class="head">
+              <span class="type">${esc(w.employee || 'unknown')} · ${esc(w.model)} · ${w.runs} runs</span>
+              <span class="save">−${w.reduction_pct}% → ${usd(w.est_monthly_savings_usd)}/mo</span>
+            </div>
+            <div class="detail">“${esc(w.excerpt)}…”</div>
+          </div>`).join('')}`;
+    } catch (e) { out.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+  });
+
+  document.getElementById('scim-gen').addEventListener('click', async () => {
+    const out = document.getElementById('scim-out');
+    const r = await post('/api/scim/token', {});
+    out.innerHTML = `SCIM base URL <b>${location.origin}${r.base_url}</b> · bearer token (copy now — shown once): <b style="color:var(--ink); user-select:all">${esc(r.token)}</b>`;
+  });
+
+  document.getElementById('csv-go').addEventListener('click', async () => {
+    const box = document.getElementById('csv-box');
+    const r = await fetch('/api/directory/csv', { method: 'POST', headers: hdrs(), body: box.value });
+    const data = await r.json();
+    box.value = '';
+    box.placeholder = `${data.imported} employees imported.`;
+    loadAll(currentUser);
+  });
+
+  document.getElementById('digest-btn').addEventListener('click', async () => {
+    const out = document.getElementById('digest-out');
+    const r = await fetch('/api/digest', { headers: hdrs() });
+    out.textContent = await r.text();
+    out.style.display = '';
+  });
+
+  document.getElementById('cb-export').addEventListener('click', async () => {
+    const r = await fetch('/api/chargeback/export', { headers: hdrs() });
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'chargeback.csv';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  document.getElementById('pc-go').addEventListener('click', async () => {
+    const btn = document.getElementById('pc-go');
+    const out = document.getElementById('pc-result');
+    const prompt = document.getElementById('pc-prompt').value.trim();
+    if (!prompt) { out.innerHTML = '<div class="empty">Paste a prompt first.</div>'; return; }
+    const [provider, model] = document.getElementById('pc-model').value.split('|');
+    const runs = Math.max(1, +document.getElementById('pc-runs').value || 50);
+    busy(btn, true);
+    try {
+      const r = await post('/api/prompt/analyze', { prompt, provider, model, runs_per_day: runs });
+      const issues = r.issues.map(s => `
+        <div class="sugg">
+          <div class="head">
+            <span class="type">${esc(s.type.replace(/_/g, ' '))}</span>
+            <span class="save">−${s.tokens_saved} ${s.kind === 'output' ? 'output ' : ''}tok</span>
+          </div>
+          <div class="detail">${esc(s.detail)}</div>
+        </div>`).join('');
+      out.innerHTML = `
+        <div class="headline">
+          <span class="big">${fmt(r.original_tokens)} → ${fmt(r.optimized_tokens)} tokens</span>
+          <span class="big good">−${r.reduction_pct}%</span>
+          <span class="sub2">est. save <b>${usd(r.est_monthly_savings_usd)}/mo</b> at ${r.runs_per_day} runs/day on ${esc(r.model)}</span>
+        </div>
+        ${issues || '<div class="empty">No bloat found — this prompt is already tight.</div>'}`;
+    } catch (e) { out.innerHTML = `<div class="empty">Analysis failed: ${esc(e.message)}</div>`; }
+    busy(btn, false);
+  });
+
+  /* Preset dropdown: fills the task fields; editing a field flips to Custom */
+  const presets = await j('/api/project/presets');
+  const presetSel = document.getElementById('pe-preset');
+  const sizeSel = document.getElementById('pe-size');
+  presetSel.innerHTML = '<option value="">Custom mix</option>' + presets.map(p =>
+    `<option value="${p.key}"${p.key === 'crud_web' ? ' selected' : ''}>${esc(p.label)}</option>`
+  ).join('');
+  function applyPreset() {
+    const p = presets.find(x => x.key === presetSel.value);
+    if (!p) return;
+    const mix = p.sizes[sizeSel.value];
+    document.getElementById('pe-simple').value = mix.simple;
+    document.getElementById('pe-medium').value = mix.medium;
+    document.getElementById('pe-complex').value = mix.complex;
+    runEstimate();
+  }
+  presetSel.addEventListener('change', applyPreset);
+  sizeSel.addEventListener('change', applyPreset);
+  for (const id of ['pe-simple', 'pe-medium', 'pe-complex'])
+    document.getElementById(id).addEventListener('input', () => { presetSel.value = ''; });
+
+  async function runEstimate() {
+    const btn = document.getElementById('pe-go');
+    const out = document.getElementById('pe-result');
+    const [provider, model] = document.getElementById('pe-model').value.split('|');
+    const body = {
+      simple: +document.getElementById('pe-simple').value || 0,
+      medium: +document.getElementById('pe-medium').value || 0,
+      complex: +document.getElementById('pe-complex').value || 0,
+      provider, model,
+      dev_hourly_rate: +document.getElementById('pe-rate').value || 40,
+    };
+    busy(btn, true);
+    try {
+      const r = await post('/api/project/estimate', body);
+      const t = r.totals;
+      if (!r.breakdown.length) { out.innerHTML = `<div class="empty">${esc(r.recommendation)}</div>`; busy(btn, false); return; }
+      const maxC = Math.max(t.dev_only_cost_usd, t.ai_assisted_high_usd, 1);
+      const bar = (label, val, note) => `
+        <div class="cmp-row">
+          <div class="cmp-label"><span>${label}${note ? ` <span style="color:var(--muted)">· ${note}</span>` : ''}</span><span class="v">${usd0(val)}</span></div>
+          <div class="cmp-track"><div style="width:${Math.max(val / maxC * 100, 1).toFixed(1)}%"></div></div>
+        </div>`;
+      const good = t.savings_usd > 0;
+      out.innerHTML = `
+        <div class="headline">
+          <span class="big ${good ? 'good' : ''}">${good ? 'save ' : 'extra cost '}${usd0(Math.abs(t.savings_usd))}</span>
+          <span class="sub2">range ${usd0(t.savings_low_usd)} – ${usd0(t.savings_high_usd)}</span>
+          <span class="sub2">${fmt(t.input_tokens + t.output_tokens)} est. tokens on ${esc(r.model)}</span>
+        </div>
+        ${bar('Developers only', t.dev_only_cost_usd, `${t.dev_only_hours} hrs`)}
+        ${bar('AI-assisted', t.ai_assisted_cost_usd, `${t.ai_assisted_review_hours} hrs review + tokens · ${usd0(t.ai_assisted_low_usd)}–${usd0(t.ai_assisted_high_usd)}`)}
+        ${bar('AI token cost alone', t.ai_token_cost_usd)}
+        <div class="rec">${esc(r.recommendation)}</div>
+        <div class="fineprint">${esc(r.assumptions.note)}</div>`;
+    } catch (e) { out.innerHTML = `<div class="empty">Estimate failed: ${esc(e.message)}</div>`; }
+    busy(btn, false);
+  }
+  document.getElementById('pe-go').addEventListener('click', runEstimate);
+  applyPreset();
+
+  addEventListener('resize', (() => {
+    let t; return () => { clearTimeout(t); t = setTimeout(() => {
+      renderDaily(lastDaily, document.getElementById('dailyChart'));
+      renderModels(lastModels, document.getElementById('modelChart'));
+    }, 150); };
+  })());
+}
+
+/* ---- boot ---- */
+(async () => {
+  if (!tok()) { showGate(); return; }
+  try {
+    const me = await j('/api/auth/me');
+    showApp();
+    await loadAll(me);
+  } catch (e) { if (e.status !== 401) console.error(e); }
+})();
+</script>
+</body>
+</html>

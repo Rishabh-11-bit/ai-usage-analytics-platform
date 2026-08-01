@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gemini-like harness</title>
+<style>
+  body { font-family: system-ui; margin: 0; }
+  .side { position: fixed; left: 0; top: 0; width: 60px; height: 100%; background: #f0f0f0; }
+  main { margin-left: 60px; max-width: 760px; padding: 20px; }
+  .chip { position: fixed; top: 10px; right: 20px; padding: 6px 10px; background: #eee;
+          border-radius: 8px; aria-label: model; }
+  #log { min-height: 300px; }
+  .turn { margin: 14px 0; }
+  .user { text-align: right; color: #333; }
+  .bubble { display: inline-block; background: #e8e8e8; border-radius: 12px; padding: 8px 12px; }
+  .model-response-text { line-height: 1.5; }
+  .composer { position: fixed; bottom: 20px; left: 80px; right: 40px; }
+  .composer .rich { border: 1px solid #bbb; border-radius: 12px; padding: 12px; min-height: 24px;
+                    background: #fff; }
+</style>
+</head>
+<body>
+<div class="side">nav</div>
+<div class="chip" aria-label="model selector">2.5 Pro</div>
+<main>
+  <!-- [role=log] like real chat transcripts; Angular re-renders this subtree -->
+  <div id="log" role="log"></div>
+</main>
+<div class="composer">
+  <div class="rich" contenteditable="true" id="composer" data-placeholder="Ask Gemini"></div>
+</div>
+
+<script src="coach.js?v=0.4.5"></script>
+<script src="usage.js?v=0.4.5"></script>
+<script>
+  // Expose a controllable send+stream that mimics Gemini/Angular:
+  //  - contenteditable composer (cleared on send)
+  //  - assistant text streamed into nested custom-ish containers
+  //  - the ENTIRE #log subtree re-rendered (nodes swapped) mid-stream
+  const log = () => document.getElementById('log');
+  const composer = document.getElementById('composer');
+
+  // thinkMs = delay between the instant prompt-echo and the response
+  // starting to stream (the "thinking pause" that broke the old timing).
+  window.chat = function (userText, replyWords, thinkMs = 3000) {
+    // type into contenteditable then "send" (clear)
+    composer.innerText = userText;
+    composer.dispatchEvent(new Event('input', { bubbles: true }));
+    composer.innerText = '';
+    composer.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // the prompt bubble echoes INSTANTLY (this is the trap)
+    const l = log();
+    const uw = document.createElement('div'); uw.className = 'turn user';
+    uw.innerHTML = '<span class="bubble"></span>';
+    uw.querySelector('.bubble').textContent = userText;
+    l.appendChild(uw);
+    const aw = document.createElement('div'); aw.className = 'turn assistant';
+    aw.innerHTML = '<div class="model-response-text"></div>';
+    l.appendChild(aw);
+
+    const words = [];
+    for (let i = 0; i < replyWords; i++)
+      words.push(['architecture','edge','device','ingestion','kafka','pipeline','storage',
+                  'postgres','timescale','kubernetes','telemetry','model','security','audit',
+                  'stream','broker','latency','throughput','schema','index'][i % 20]);
+    let idx = 0;
+    return new Promise(done => {
+      // wait thinkMs (model "thinking") BEFORE the response starts streaming
+      setTimeout(() => {
+      const t = setInterval(() => {
+        const target = log().querySelector('.turn.assistant:last-child .model-response-text')
+                     || aw.querySelector('.model-response-text');
+        target.textContent = words.slice(0, idx += 6).join(' ') + '.';
+        // Angular-style: re-render the whole transcript ~40% through
+        if (idx > replyWords * 0.4 && !log().dataset.rerendered) {
+          const l2 = log(); l2.dataset.rerendered = '1';
+          const fresh = l2.cloneNode(true);
+          l2.parentNode.replaceChild(fresh, l2);
+        }
+        if (idx >= replyWords) { clearInterval(t); log().dataset.rerendered = ''; done(); }
+      }, 45);
+      }, thinkMs);
+    });
+  };
+</script>
+</body>
+</html>

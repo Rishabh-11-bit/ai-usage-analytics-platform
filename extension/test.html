@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Prompt Coach — test harness</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto;
+         background: #f4f4f2; color: #111; padding: 0 20px; }
+  h1 { font-size: 18px; }
+  p { color: #555; font-size: 13.5px; }
+  textarea { width: 100%; min-height: 140px; font: 14px/1.5 system-ui; padding: 10px;
+             border: 1px solid #bbb; border-radius: 8px; }
+  .ce { width: 100%; min-height: 90px; border: 1px solid #bbb; border-radius: 8px;
+        padding: 10px; background: #fff; margin-top: 24px; font-size: 14px; }
+</style>
+</head>
+<body>
+<h1>Prompt Coach — test harness</h1>
+<p>Simulates the extension outside Chrome: same coach.js + content.js are loaded
+below. Focus an input and type (or click Fill) — the badge should appear.</p>
+<button id="fill">Fill textarea with a bloated prompt</button>
+<h3>Textarea (ChatGPT-style)</h3>
+<textarea id="ta" placeholder="Type a prompt…"></textarea>
+<h3>Contenteditable (Claude-style)</h3>
+<div class="ce" contenteditable="true" id="ce"></div>
+
+<script src="coach.js?v=0.4.0"></script>
+<script src="content.js?v=0.4.0"></script>
+<script src="usage.js?v=0.4.0"></script>
+<script>
+  document.getElementById('fill').onclick = () => {
+    const ta = document.getElementById('ta');
+    ta.value = "You are a highly intelligent, world-class expert senior software engineer with decades of experience in every framework. Please could you kindly review the following code. Please make sure to check for bugs. It is VERY IMPORTANT that you actually check EVERYTHING carefully!! In order to do this properly, please basically go through each line. Thank you so much. I would like you to essentially give feedback in order to improve the code quality due to the fact that we are shipping soon.";
+    ta.focus();
+    ta.dispatchEvent(new Event('input', {bubbles: true}));
+  };
+</script>
+</body>
+</html>

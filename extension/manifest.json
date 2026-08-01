@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "TokenTracker Prompt Coach",
+  "version": "0.4.5",
+  "description": "Live token-bloat coaching plus a month-to-date AI usage bar for ChatGPT, Claude, Gemini and Copilot. Analysis is fully local; only usage counters (never content) are reported, and only if you configure a workspace.",
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost/*", "https://*/*"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://copilot.microsoft.com/*",
+        "https://poe.com/*"
+      ],
+      "js": ["coach.js", "content.js", "usage.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "TokenTracker Prompt Coach"
+  },
+  "options_page": "options.html"
+}

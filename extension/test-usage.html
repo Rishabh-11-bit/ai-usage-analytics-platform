@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Usage tracker — test harness</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 30px auto;
+         background: #f4f4f2; color: #111; padding: 0 20px; }
+  h1 { font-size: 18px; }
+  .model { padding: 6px 10px; background: #fff; border: 1px solid #ccc; border-radius: 6px;
+           display: inline-block; margin-bottom: 12px; }
+  #thread > div { background: #fff; border: 1px solid #ddd; border-radius: 8px;
+                  padding: 10px; margin: 8px 0; }
+  [data-message-author-role="assistant"] { background: #eef4ff; }
+  textarea { width: 100%; min-height: 70px; font: 14px system-ui; padding: 10px;
+             border: 1px solid #bbb; border-radius: 8px; }
+  button { font: inherit; padding: 8px 16px; border-radius: 7px; border: 1px solid #888;
+           background: #2a78d6; color: #fff; cursor: pointer; margin-top: 8px; }
+</style>
+</head>
+<body>
+<h1>Usage tracker — test harness</h1>
+<p>Simulates a chat UI (model switcher + assistant replies + send button) so
+usage.js can be exercised outside a real provider. The usage bar appears
+bottom-right; send a message to accumulate tokens.</p>
+<div class="model" aria-label="model selector">Model: GPT-4o</div>
+<div id="thread"></div>
+<textarea id="composer" placeholder="Type a message…"></textarea>
+<button data-testid="send-button" id="send">Send</button>
+
+<script src="coach.js?v=0.4.3"></script>
+<script src="usage.js?v=0.4.3"></script>
+<script>
+  // simulate an assistant reply of a controllable size after each send
+  const thread = document.getElementById('thread');
+  const composer = document.getElementById('composer');
+  document.getElementById('send').addEventListener('click', () => {
+    const text = composer.value.trim();
+    if (!text) return;
+    const u = document.createElement('div');
+    u.setAttribute('data-message-author-role', 'user');
+    u.textContent = text;
+    thread.appendChild(u);
+    composer.value = '';
+    // assistant streams in a reply ~3x the prompt length
+    const a = document.createElement('div');
+    a.setAttribute('data-message-author-role', 'assistant');
+    thread.appendChild(a);
+    const reply = ('This is a simulated assistant response. ').repeat(Math.max(text.length / 8, 5));
+    let i = 0;
+    const stream = setInterval(() => {
+      a.textContent = reply.slice(0, i += 40);
+      if (i >= reply.length) clearInterval(stream);
+    }, 60);
+  });
+</script>
+</body>
+</html>
