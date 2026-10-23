@@ -199,8 +199,11 @@ def test_membership_rightsizing_verdicts():
     db.upsert_seat(T1, "ChatGPT Plus", dorm, 20.0, "2026-06-01T00:00:00+00:00")
     # light user -> some metered usage well under $20 -> move_to_metered
     light = db.upsert_employee(T1, "rs:light", "Light Lucy", team="Ops")
-    db.upsert_seat(T1, "ChatGPT Plus", light, 20.0, "2026-07-12T00:00:00+00:00")
-    telemetry.ingest(T1, light, [{"ts": "2026-07-12T09:00:00", "model": "gpt-4o-mini",
+    # usage must fall inside the 30-day window, so date it relative to now
+    from datetime import datetime, timedelta, timezone
+    recent = datetime.now(timezone.utc) - timedelta(days=1)
+    db.upsert_seat(T1, "ChatGPT Plus", light, 20.0, recent.isoformat())
+    telemetry.ingest(T1, light, [{"ts": recent.strftime("%Y-%m-%dT%H:%M:%S"), "model": "gpt-4o-mini",
                                   "input_tokens": 2000, "output_tokens": 3000}])
     # an IDE seat must NOT appear here (extension can't measure IDE usage)
     ide = db.upsert_employee(T1, "rs:ide", "Ide Ian", team="Eng")
